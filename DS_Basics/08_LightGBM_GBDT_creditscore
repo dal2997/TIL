@@ -1,0 +1,459 @@
+# 🌿 LightGBM (GBDT) 개념 & 튜닝 가이드 (Credit Score 실습 기준)
+> 목적: `6-LightGBM - Credit Score.ipynb`에서 다룬 **LightGBM 분류 모델링 흐름**을 기준으로  
+> ✅ “LightGBM이 뭔지” + ✅ “핵심 하이퍼파라미터가 뭘 조절하는지” + ✅ “요즘 대세 튜닝 포인트”를 정리한다.
+
+---
+
+## 1) LightGBM 한 줄 정의
+- **LightGBM = Gradient Boosting Decision Tree(GBDT) 계열** 모델  
+- 여러 개의 **결정트리(weak learner)** 를 **순차적으로** 만들면서, 이전 모델이 못 맞춘 오차를 다음 트리가 보완하도록 학습한다.
+
+---
+
+## 2) RandomForest(배깅) vs Boosting(부스팅) 차이 (핵심)
+### 🌲 RandomForest (Bagging)
+- 트리들이 **서로 독립적**으로 학습
+- 데이터/특성을 샘플링해서(bootstrap, feature subsampling) **분산을 줄이는** 방향
+- 비교적 안정적이고 과적합에 강한 편
+
+### ⚡ Boosting (GBDT, LightGBM)
+- 트리들이 **순차적으로** 학습
+- 이전 단계의 실수를 다음 트리가 보완 → **편향(bias)을 줄이는** 방향
+- 성능이 잘 나오지만, **튜닝/과적합 관리가 더 중요**
+
+---
+
+## 3) LightGBM이 “빠르고 강한” 이유(개념)
+LightGBM은 GBDT 계열 중에서도 학습 효율을 높인 구현체로 유명하다. 실무에서 자주 언급되는 포인트는 아래 2개:
+
+1) **Histogram 기반 분할**
+- 연속형 값을 그대로 정렬/스캔하는 대신, 값을 **bin(구간)** 으로 묶어서 분할 후보를 탐색 → 속도/메모리 효율 개선
+
+2) **Leaf-wise(리프 중심) 성장**
+- 레벨 단위로 균형 있게 자라는 방식(level-wise)이 아니라  
+  “가장 손실을 많이 줄일 수 있는 리프”를 우선적으로 분할하는 방식(leaf-wise)을 택함
+- 장점: 잘 맞추면 성능이 빠르게 올라감
+- 단점: 데이터가 적거나 파라미터가 공격적이면 **과적합이 빨리 올 수 있음**
+  → 그래서 `num_leaves`, `max_depth`, `min_data_in_leaf` 류가 중요해짐
+
+---
+
+## 4) ipynb에서의 모델링 흐름 요약(핵심만)
+### 4-1) 기본 모델
+- `LGBMClassifier(random_state=100)`로 baseline 학습 후 예측
+- `accuracy_score`, `classification_report`, `confusion_matrix` 확인
+- `predict_proba` 기반으로 **ROC-AUC(멀티클래스)** 평가
+
+### 4-2) 멀티클래스 AUC 옵션
+- `roc_auc_score(y_test, proba, multi_class='ovr')` 사용
+  - `ovr`(one-vs-rest): 각 클래스를 “그 클래스 vs 나머지”로 계산 후 평균
+  - `ovo`(one-vs-one): 클래스 쌍별로 계산 후 평균  
+  - 실무/대회에서 둘 다 쓰지만, **ovr이 직관적이라 자주 등장**
+
+### 4-3) 하이퍼파라미터 탐색
+- `GridSearchCV`: 지정한 조합을 **전부** 평가(정확하지만 느림)
+- `RandomizedSearchCV`: 조합 공간에서 **n_iter 만큼 랜덤 샘플** (빠른 대신 “진짜 최적” 보장은 X)
+
+---
+
+## 5) 하이퍼파라미터 4대장: 의미/트레이드오프/감각
+> 아래 4개는 LightGBM 튜닝에서 “개념을 모르면 진짜 아무것도 못 함” 급.
+
+### 5-1) `n_estimators` (트리 개수)
+- 의미: 부스팅에서 트리를 **몇 개 더할지**
+- 크게 하면:
+  - 학습 용량↑ → 성능↑ 가능
+  - 그러나 **과적합 위험↑** (특히 early stopping 없으면)
+- 작게 하면:
+  - 학습이 덜 됨 → 과소적합 위험↑
+
+✅ 감각: `learning_rate`와 “세트”로 봄  
+- `learning_rate` 낮추면 보통 `n_estimators`는 늘려야 한다.
+
+---
+
+### 5-2) `learning_rate` (한 트리의 기여도/스텝 크기)
+- 의미: 새로 추가되는 트리가 기존 예측에 더해질 때 **얼마나 세게 반영할지**
+- 크게 하면:
+  - 빠르게 맞추지만 **불안정/과적합** 가능성↑
+- 작게 하면:
+  - 천천히 안정적으로 맞추지만 **트리가 더 많이 필요**
+
+✅ 감각(대세): 보통 `0.01 ~ 0.1` 구간에서 시작  
+- `0.5`는 꽤 공격적이라(데이터/노이즈에 따라) 상위권에서 잘 안 쓰는 편
+
+---
+
+### 5-3) `max_depth` (트리 깊이 제한)
+- 의미: 한 트리가 허용하는 **규칙의 복잡도(깊이)** 상한
+- `-1`: 제한 없음
+- 깊게 하면:
+  - 복잡한 패턴 학습 가능(표현력↑)
+  - 대신 과적합 위험↑
+- 얕게 하면:
+  - 일반화 성능↑
+  - 대신 과소적합 위험↑
+
+✅ 감각: LightGBM에서는 `num_leaves`가 더 “직접적인 복잡도 레버”인 경우가 많고,  
+`max_depth`는 **안전장치**처럼 쓰는 경우도 많다.
+
+---
+
+### 5-4) `num_leaves` (리프 개수 = 실질 복잡도 레버)
+- 의미: 한 트리에서 만들 수 있는 **리프(끝 노드)** 최대 개수
+- 크게 하면:
+  - 더 촘촘한 분할 가능 → 성능↑ 가능 / 과적합 위험↑
+- 작게 하면:
+  - 단순한 모델 → 안정적 / 과소적합 위험↑
+
+✅ 감각(중요): 보통 아래 관계를 참고
+- `num_leaves`는 대략 `2^(max_depth)`를 넘기면 의미가 애매해질 수 있음  
+  (깊이가 제한된 트리에서는 리프 수도 제한되기 때문)
+
+---
+
+## 6) “대세 튜닝 포인트” (이걸 기술폴더에 꼭 박아두기)
+> 요즘 LightGBM 튜닝은 보통 아래 순서/감각이 많이 쓰임.
+
+### ✅ 6-1) `learning_rate` + `n_estimators`는 “early stopping”으로 잡는 게 정석
+- 대세 패턴:
+  1) `learning_rate`를 낮게(예: 0.03, 0.05) 잡고
+  2) `n_estimators`는 크게(예: 5000) 잡은 다음
+  3) **early stopping**으로 “최적 트리 수”를 자동으로 멈춤
+
+~~~python
+from lightgbm import LGBMClassifier
+from lightgbm.callback import early_stopping
+
+model = LGBMClassifier(
+    learning_rate=0.05,
+    n_estimators=5000,
+    random_state=100
+)
+
+model.fit(
+    X_train, y_train,
+    eval_set=[(X_valid, y_valid)],
+    eval_metric="multi_logloss",
+    callbacks=[early_stopping(stopping_rounds=100)]
+)
+~~~
+
+> 이렇게 하면 “n_estimators를 손으로 맞추는” 부담이 크게 줄고, 과적합도 줄이기 쉽다.
+
+---
+
+### ✅ 6-2) `num_leaves`는 성능과 과적합을 크게 좌우한다
+- leaf-wise 성장이 강점인 만큼, `num_leaves`가 커지면 성능이 잘 오를 때도 있지만  
+  동시에 과적합이 진짜 빨리 올 수 있다.
+- 실전에서는 `num_leaves`를 올릴 때 아래 “과적합 방지 파라미터”를 같이 만지는 편이 많다.
+
+---
+
+### ✅ 6-3) 과적합 방지 파라미터(실전에서 거의 필수)
+> ipynb 파라미터 목록엔 없었지만, 실제 튜닝에서는 아래가 “자주 같이 등장”한다.
+
+- `min_child_samples` (또는 `min_data_in_leaf`)
+  - 리프 하나에 최소 몇 개 데이터가 있어야 분할 허용할지
+  - **키우면 과적합↓** (너무 키우면 과소적합)
+
+- `feature_fraction`
+  - 트리 하나 만들 때 사용할 feature 비율(컬럼 샘플링)
+  - 낮추면 과적합↓, 다양성↑
+
+- `bagging_fraction` + `bagging_freq`
+  - row 샘플링(배깅) 요소를 부스팅에도 섞어 과적합↓
+  - `bagging_freq > 0`일 때 적용되는 편
+
+- `lambda_l2`(=`reg_lambda`), `lambda_l1`(=`reg_alpha`)
+  - 정규화. 과적합 줄이는 데 도움
+
+---
+
+## 7) “왜 수업이랑 best_params가 다를 수 있나?” (재현성 파트)
+### 7-1) RandomizedSearchCV는 애초에 “랜덤 샘플링”
+- 가능한 조합을 전부 보는 게 아니라, `n_iter`만큼 **랜덤으로 뽑아서** 그중 best를 고름  
+→ 뽑힌 후보가 달라지면 best도 달라질 수 있음
+
+### 7-2) CV 분할/셔플/전처리 순서가 조금만 달라도 결과가 흔들림
+- `train_test_split(random_state=...)` 동일 여부
+- `StratifiedKFold(shuffle=True, random_state=...)` 같은 설정 여부
+- 결측치 처리/인코딩 과정에서 행 순서가 바뀌는 경우 등
+
+### 7-3) LightGBM은 환경에 따라 완전 결정적이지 않을 때도 있음
+- 멀티스레드/내부 최적화 영향으로 미세한 차이가 생길 수 있음  
+→ “동점권”에서 1등이 바뀌는 식으로 보일 수 있음
+
+✅ 재현성 높이고 싶으면(필요 시)
+~~~python
+lgbm = LGBMClassifier(
+    random_state=100,
+    deterministic=True,
+    force_row_wise=True
+)
+~~~
+
+---
+
+## 8) 추천 탐색 범위(실전 감각용)
+> “대세” 관점에서 무난하게 출발하는 범위 예시 (데이터 크기/노이즈에 따라 조정)
+
+- `learning_rate`: `0.01 ~ 0.1`
+- `n_estimators`: early stopping 쓰면 `2000 ~ 10000`까지도 열어두고 자동 결정
+- `num_leaves`: `15 ~ 127` (작게 시작해서 올리기)
+- `max_depth`: `-1` 또는 `3 ~ 12` (안전장치로 제한 걸기도 함)
+- 과적합 방지:
+  - `min_child_samples`: `20 ~ 200`
+  - `feature_fraction`: `0.7 ~ 1.0`
+  - `bagging_fraction`: `0.7 ~ 1.0`
+  - `bagging_freq`: `1 ~ 10`
+  - `lambda_l2`: `0 ~ 10` (필요 시 더)
+
+---
+
+## 9) 자주 나는 실수(진짜 중요)
+- 파라미터 키 오타: `n_estimmators`, `n_estimatores` 같은 오타는 **탐색 자체가 깨지거나**(보통 에러)  
+  “내가 바꿨다고 생각했는데 사실 적용이 안 되는” 상황을 만든다.  
+→ 실습에서 결과가 이상하면 **우선 키 이름부터 확인**.
+
+---
+
+## 10) 내 결론(암기용)
+- LightGBM은 **부스팅 기반 GBDT**이고, leaf-wise 성장 특성 때문에 성능이 잘 나오는 대신 **과적합 관리가 핵심**
+- 튜닝의 중심축은:
+  1) **`learning_rate` + `n_estimators` (early stopping으로 세트 튜닝)**
+  2) **`num_leaves` (복잡도 레버)**
+  3) **과적합 방지 파라미터들(`min_child_samples`, `feature_fraction`, `bagging_*`, `lambda_*`)**
+
+---
+## 11) RandomizedSearchCV 결과 해석: “상위 N개 조합”으로 동점권/진짜 차이 확인하기
+> 목적: `best_params_` 하나만 보고 끝내지 말고, **상위권 조합들이 점수 차이가 얼마나 나는지** 확인해서  
+> - (1) 진짜로 압도적인 1등인지  
+> - (2) 사실상 “동점권”이라 아무거나 찍힌 건지  
+> 를 판단한다.
+
+### 11-1) `cv_results_`로 상위 10개 뽑기 (가장 추천)
+~~~python
+import pandas as pd
+
+res = pd.DataFrame(rand_lgbm.cv_results_)
+
+view_cols = [
+    "rank_test_score",
+    "mean_test_score",
+    "std_test_score",
+    "param_learning_rate",
+    "param_n_estimators",
+    "param_max_depth",
+    "param_num_leaves",
+]
+top10 = (res[view_cols]
+         .sort_values("rank_test_score")
+         .head(10))
+
+top10
+~~~
+
+### 11-2) “1등 대비 점수 차이(gap)”로 동점권 여부 판단
+> gap이 매우 작으면(예: 0.001~0.003 수준) 보통 **랜덤성/폴드 차이**로 1등이 바뀌는 일이 흔하다.
+~~~python
+res = pd.DataFrame(rand_lgbm.cv_results_)
+
+best = res["mean_test_score"].max()
+
+top = (res.sort_values("mean_test_score", ascending=False)
+         .loc[:, ["mean_test_score", "std_test_score", "params"]]
+         .head(10)
+         .copy())
+
+top["gap_from_best"] = best - top["mean_test_score"]
+top
+~~~
+
+✅ 해석 팁(중요)
+- `gap_from_best`가 **작고** `std_test_score`가 상대적으로 **크면**  
+  → “누가 1등이냐”는 의미가 약함(사실상 동점권)
+- 이 경우 **더 단순/안정적인 모델**(과적합 위험 낮고, 해석 쉬운 쪽)로 가는 게 실무에서 자주 정답
+
+---
+
+## 11-3) 동점권이면 무엇을 선택하는 게 “대세”인가?
+동점권이면 보통 아래 우선순위로 고른다.
+
+1) **더 단순한 모델 우선**
+- `num_leaves` ↓ (가장 강력한 복잡도 레버)
+- `max_depth` ↓ (안전장치)
+- (추가로 튜닝한다면) `min_child_samples` ↑, `feature_fraction` ↓ 등으로 과적합 완화
+
+2) **학습/추론 속도 & 운영 안정성**
+- 같은 성능이면 더 가벼운 모델이 유지보수/배포에 유리
+
+3) **일관성(재현성)**
+- seed/cv 고정해도 결과가 자꾸 바뀌면 “우연 1등”일 가능성 ↑  
+  → 상위권 중 **평균 성능이 안정적인 조합**을 선택
+
+---
+
+## 11-4) 파라미터별 “어느 쪽이 좋은 경향인지” 빠르게 보기(요약 통계)
+> RandomizedSearch 결과를 파라미터별로 묶어 평균 점수를 보면 “감각” 잡기 좋다.
+~~~python
+res = pd.DataFrame(rand_lgbm.cv_results_)
+
+# num_leaves별 평균 성능
+res.groupby("param_num_leaves")["mean_test_score"].mean().sort_values(ascending=False)
+
+# learning_rate별 평균 성능
+res.groupby("param_learning_rate")["mean_test_score"].mean().sort_values(ascending=False)
+
+# max_depth별 평균 성능
+res.groupby("param_max_depth")["mean_test_score"].mean().sort_values(ascending=False)
+~~~
+
+---
+
+## 11-5) ipynb 기준 best_params 예시(기록용)
+> 실습 노트에서는 아래 조합이 best로 나옴:
+- `{'num_leaves': 5, 'n_estimators': 1000, 'max_depth': 50, 'learning_rate': 0.01}`
+
+⚠️ 주의
+- `num_leaves=5`이면 트리 복잡도가 매우 제한적이라, `max_depth=50`은 **체감 영향이 작을 수 있음**
+  (리프 수 제한이 더 강하게 걸리기 때문)
+- RandomizedSearch는 `n_iter`만큼만 뽑아보므로, `n_iter`가 작으면 “진짜 좋은 조합”을 못 뽑았을 수도 있음  
+  → 성능이 아쉬우면 `n_iter`를 늘리거나(예: 100~300) early stopping 기반 튜닝으로 넘어가는 게 일반적
+
+---
+## 12) GridSearchCV vs RandomizedSearchCV: 언제 뭘 쓰는 게 좋나?
+> 결론부터: **대부분은 Randomized → (필요 시) Grid로 좁히기**가 실전에서 흔한 흐름.
+
+### 12-1) GridSearchCV
+- 장점: 지정한 조합을 **전부** 평가 → “그 범위 안에서는” 가장 확실
+- 단점: 조합 수가 조금만 커져도 **시간 폭발**
+
+✅ 추천 상황
+- 탐색 범위가 이미 좁고(감이 잡혔고),
+- 꼭 정밀하게 최적점을 찍고 싶을 때
+
+---
+
+### 12-2) RandomizedSearchCV
+- 장점: 큰 탐색 공간을 **저렴하게 훑어볼 수 있음**
+- 단점: `n_iter`만큼만 뽑아서 보기 때문에 **진짜 최적을 보장하지 않음**
+
+✅ 추천 상황(대세)
+- 처음 튜닝할 때(감이 없을 때)
+- 파라미터가 많고 탐색 공간이 클 때
+- “대충 잘 되는 구간”을 빨리 찾고 싶을 때
+
+---
+
+### 12-3) 실전에서 가장 흔한 2단계 전략
+1) **RandomizedSearchCV로 대략적인 ‘좋은 구간’ 찾기**
+2) 그 구간 주변만 **GridSearchCV로 촘촘하게** 마무리
+
+예:
+- Randomized에서 `learning_rate`가 0.03 근처가 좋았고,
+- `num_leaves`가 31~63 근처가 좋았다  
+→ 그 주변만 Grid로 좁혀서 탐색
+
+---
+
+## 13) `n_iter`를 늘리면 뭐가 좋아지고, 비용은 어떻게 늘어나는가?
+### 13-1) 기대 효과
+- RandomizedSearch는 “뽑는 개수”가 늘수록 좋은 후보를 볼 확률이 커짐
+- 특히 파라미터 조합 공간이 큰데 `n_iter`가 30처럼 작으면  
+  **우연히 좋은 조합을 못 보고 끝날 가능성**이 꽤 있음
+
+✅ 경험칙(대충 감각)
+- 처음 감 잡기: `n_iter=30~100`
+- 꽤 진지한 튜닝: `n_iter=100~300`
+- 아주 빡세게: 그 이상(대신 시간/자원 비용 큼)
+
+---
+
+### 13-2) 비용(시간) 증가: 거의 선형
+대략적으로 튜닝 시간은 아래에 비례:
+- `n_iter × cv × (한 번 학습 시간)`
+
+예) `n_iter=30`, `cv=3`이면 학습 90번  
+`n_iter=300`이면 학습 900번 → **대략 10배**
+
+---
+
+### 13-3) 그래서 “대세”는 early stopping으로 넘어간다
+`n_estimators`를 큰 값으로 열어두고, 검증 성능이 안 좋아지면 자동으로 멈추게 하면:
+- 트리 개수 최적화가 자동화되고
+- 과적합도 줄이고
+- 튜닝 효율도 좋아짐
+
+---
+
+## 14) (실전 추천) RandomizedSearch용 현실적인 search space 예시
+> ipynb에서는 4개 파라미터만 탐색했는데, 실전에서는 “과적합 방지” 파라미터도 같이 보는 경우가 많다.
+
+### 14-1) 기본 4대장 + 과적합 방지 파라미터 확장(추천)
+~~~python
+params = {
+    # 핵심 4대장
+    "learning_rate": [0.01, 0.03, 0.05, 0.1],
+    "n_estimators": [1000, 3000, 5000],  # early stopping 쓰면 크게 열어두기
+    "num_leaves": [15, 31, 63, 127],
+    "max_depth": [-1, 5, 8, 12],
+
+    # 과적합 방지(대세 파트)
+    "min_child_samples": [20, 50, 100, 200],
+    "feature_fraction": [0.7, 0.8, 0.9, 1.0],
+    "bagging_fraction": [0.7, 0.8, 0.9, 1.0],
+    "bagging_freq": [0, 1, 5, 10],
+    "lambda_l2": [0, 0.1, 1, 5, 10],
+}
+~~~
+
+✅ 사용 감각
+- 데이터가 크고 노이즈가 있으면:
+  - `min_child_samples` ↑, `feature_fraction` ↓, `bagging_fraction` ↓ 쪽이 안정적
+- 성능이 안 나오면:
+  - `num_leaves` ↑ (단, 과적합 방지 파라미터도 같이 조정)
+
+---
+
+## 15) “튜닝 순서” 추천(이걸 그대로 따라가면 됨)
+> 너무 많은 걸 한 번에 돌리면 시간만 쓰고 감이 안 온다. 아래 순서가 보통 깔끔하다.
+
+1) **Baseline** (기본 모델 성능 확인)
+2) `learning_rate` 대략 선택(0.03~0.1)  
+3) `n_estimators`는 크게 열어두고 **early stopping으로 최적 트리 수 찾기**
+4) `num_leaves`로 복잡도 조절 (성능/과적합 밸런스)
+5) 과적합 방지 파라미터(`min_child_samples`, `feature_fraction`, `bagging_*`, `lambda_*`)로 안정화
+6) 마지막에 Grid로 좁혀서 미세조정(필요할 때만)
+
+---
+
+## 16) (부록) RandomizedSearch 결과를 “같은 포맷”으로 Grid 결과와 비교하기
+> 둘 다 `cv_results_`가 같은 구조라서, 상위 N개를 똑같이 뽑아 비교하면 된다.
+
+~~~python
+import pandas as pd
+
+def topn_from_search(search, n=10):
+    res = pd.DataFrame(search.cv_results_)
+    cols = ["rank_test_score", "mean_test_score", "std_test_score", "params"]
+    return res[cols].sort_values("rank_test_score").head(n)
+
+# 예시
+# top_rand = topn_from_search(rand_lgbm, n=10)
+# top_grid = topn_from_search(grid_lgbm, n=10)
+
+# display(top_rand)
+# display(top_grid)
+~~~
+
+✅ 비교 해석 팁
+- Grid가 Random보다 좋은 게 “당연”한 게 아니라,
+  - Random이 더 넓게 훑어서 좋은 구간을 더 빨리 찾을 수도 있고,
+  - Grid가 범위를 잘못 잡으면 오히려 별로일 수도 있다.
+- 그래서 보통은:
+  - Random으로 방향 잡고
+  - Grid로 마무리(범위를 좁힌 상태에서)
+
+---
+
