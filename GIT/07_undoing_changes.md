@@ -30,3 +30,22 @@ git commit --amend
 - “브랜치 이동해야 함” → stash
 - “방금 커밋이 아쉬움” → amend
 
+## checkout 대신 restore 사용
+
+Git 최신 버전에서는 역할이 분리됨
+
+- 브랜치 이동 → `git switch`
+- 파일 되돌리기 → `git restore`
+
+### 파일 변경 되돌리기
+
+~~~
+git restore file.txt
+~~~
+
+### staging 취소
+
+~~~
+git restore --staged file.txt
+~~~
+
