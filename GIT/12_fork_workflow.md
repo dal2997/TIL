@@ -58,3 +58,26 @@ git push origin main
 - upstream을 origin이라고 착각해서 fetch/push 방향을 반대로 함
 - main이 아닌 브랜치에서 upstream main을 merge하려다 꼬임
 
+## origin / upstream 개념 정리
+
+- origin : **내 GitHub 레포**
+- upstream : **원본(공식) 레포**
+
+### remote 확인
+
+~~~
+git remote -v
+~~~
+
+### 원본 레포 최신 내용 반영
+
+~~~
+git fetch upstream
+git merge upstream/main
+git push origin main
+~~~
+
+⚠️ remote 이름 `upstream`과
+⚠️ 브랜치 추적 개념 `upstream`은 **완전히 다른 개념**
+
+

@@ -33,3 +33,17 @@ Working → Staging → Commit → Remote
 Git은 “줄 수정”만 저장하는 게 아니라  
 **커밋 시점의 프로젝트 상태(스냅샷)** 를 저장한다.
 
+## Git 저장소 초기화 (git init)
+
+- `git init`은 **폴더를 Git 저장소로 만들 때 딱 한 번만** 사용
+- 이미 `.git` 폴더가 있으면 다시 할 필요 ❌
+- `git clone`으로 받은 레포에는 이미 `.git`이 존재함
+
+### 현재 폴더가 Git 저장소인지 확인
+
+~~~
+git rev-parse --is-inside-work-tree
+~~~
+
+- `true` → 이미 Git 저장소
+- 에러 → 아직 `git init` 안 된 상태
