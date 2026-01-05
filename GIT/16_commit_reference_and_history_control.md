@@ -286,4 +286,108 @@ git rebase -i HEAD~5
 git cherry-pick a1b2c3d
 git cherry-pick HEAD~3..HEAD
 ~~~
+---
 
+## 실습 로그 해설: `git reset HEAD^` + `git restore`
+
+아래는 “방금 만든 커밋을 취소하고(히스토리 되돌림) → 파일 변경도 다시 원복”하는 흐름이다.
+
+---
+
+### 1) `git log --pretty=oneline`
+커밋 히스토리를 **한 줄로 간단히** 보여준다.
+
+~~~ 
+git log --pretty=oneline
+~~~
+
+- 각 커밋이 `커밋해시 커밋메시지` 형태로 1줄씩 출력
+- “지금 HEAD가 어디인지”, “되돌릴 커밋이 뭔지” 확인할 때 자주 씀
+
+---
+
+### 2) `git reset HEAD^`
+현재 브랜치의 HEAD를 **바로 이전 커밋으로 이동**시킨다.
+
+~~~ 
+git reset HEAD^
+~~~
+
+- `HEAD^`는 `HEAD~1`과 거의 동일: “부모 커밋(한 칸 뒤)”
+- 옵션을 안 쓰면 기본은 `--mixed`:
+  - ✅ 커밋은 취소됨(히스토리에서 빠짐)
+  - ✅ staging 영역(index)은 취소됨
+  - ✅ 워킹 디렉토리(파일 수정 내용)는 **그대로 남음**
+
+그래서 화면에 이런 메시지가 뜬다:
+
+- `Unstaged changes after reset:`  
+  → “reset 했더니 커밋은 되돌렸고, 그 결과 파일 변경이 **스테이징 안 된 상태로 남아있다**”라는 뜻  
+- `M HELP.md`  
+  → HELP.md가 수정(modified)된 상태라는 표시
+
+---
+
+### 3) `git status`
+현재 상태를 요약해서 보여준다.
+
+~~~ 
+git status
+~~~
+
+화면의 핵심 포인트:
+- `Changes not staged for commit:`  
+  → 변경은 있는데 아직 `git add` 안 해서 스테이징이 안 됨
+- `modified: HELP.md`  
+  → HELP.md가 수정됨
+- 안내 문구:
+  - `use "git add <file>..."` → 다시 커밋하려면 add 해라
+  - `use "git restore <file>..."` → 변경을 버리고 원복하려면 restore 해라
+
+---
+
+### 4) `git restore HELP.md`
+워킹 디렉토리의 HELP.md 변경을 **마지막 커밋 상태로 되돌림(폐기)** 한다.
+
+~~~ 
+git restore HELP.md
+~~~
+
+- 이 명령은 “수정한 내용을 버리고, HEAD 기준 파일 상태로 복구”하는 것
+- 결과적으로 `git status`를 다시 치면 보통 깨끗해짐(수정 표시 사라짐)
+
+---
+
+## 이 흐름을 한 문장으로 요약
+- `git reset HEAD^` : **방금 커밋을 취소**했지만 파일 수정 내용은 남김(기본 mixed)
+- `git restore HELP.md` : 남아있는 파일 수정 내용도 **완전히 원복**
+
+---
+
+## 옵션까지 붙여서 기억하면 더 강해짐
+
+### A) 커밋만 취소하고, 변경은 “스테이징 상태로” 남기고 싶다
+~~~ 
+git reset --soft HEAD^
+~~~
+
+### B) 커밋 취소 + 스테이징 취소 + 워킹 변경 유지 (지금 스샷과 같은 기본 동작)
+~~~ 
+git reset --mixed HEAD^
+~~~
+
+### C) 전부(커밋/스테이징/워킹) 특정 시점으로 강제 되돌림 (주의)
+~~~ 
+git reset --hard HEAD^
+~~~
+
+---
+
+## 미니 치트시트 (그대로 따라치기)
+~~~ 
+git log --pretty=oneline
+git reset HEAD^
+git status
+git restore HELP.md
+git status
+~~~
