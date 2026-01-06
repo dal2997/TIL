@@ -1,282 +1,346 @@
-# ✅ TIL/LINUX/ 05~10 (04 이후 확장: “전체적인” 리눅스 명령어 기초~응용)
-# - 04에서 다룬 내용(PS1/컬러/리다이렉션/PATH/alias/스크립트 입문)은 여기서 반복하지 않음
-# - 1~3 실습(/work setgid, setuid 등)에서 “다음 단계로 연결되는” 명령어 위주로 확장
+# 05_shell_practice.md
+# Shell 실습 정리 (PS1 / Color / Redirection / PATH / alias / Script)
+
+> 이 문서는 “쉘이 무엇이고 어떻게 커스터마이징/활용하는지”를 실습 위주로 정리한 파일이다.
 
 ---
 
-## 05) TIL/LINUX/05_files_and_directories_advanced.md
+## 1. 현재 쉘 확인
 
-# Files & Directories (기초 → 실무형)
-
-## 1) 경로/탐색
 ~~~bash
-pwd
-ls
-ls -l
-ls -alh
-cd /path
-cd ..
-cd -
-tree -L 2        # 없으면: sudo apt install tree
+echo $SHELL
 ~~~
 
-## 2) 생성/복사/이동/삭제
-~~~bash
-touch a.txt
-mkdir dir
-mkdir -p a/b/c
-
-cp src.txt dst.txt
-cp -r dir1 dir2
-
-mv old new
-mv file /tmp/
-
-rm file
-rm -r dir
-rm -rf dir       # ⚠️ 주의: 강제 삭제
-~~~
-
-### ⚠️ rm -rf 사고 방지 루틴(중요)
-~~~bash
-pwd
-ls -alh
-# 삭제 대상이 맞는지 확인 후 rm 실행
-~~~
-
-## 3) 파일 내용 보기(상황별)
-~~~bash
-cat file.txt          # 짧은 파일
-less file.txt         # 긴 파일(검색: /pattern, 종료: q)
-head -n 20 file.txt
-tail -n 50 file.txt
-tail -f app.log       # 로그 따라가기
-~~~
-
-## 4) 파일 메타/타입
-~~~bash
-file mycat
-stat mycat
-~~~
-
-## 5) 권한 확인 기본 패턴(실무)
-~~~bash
-ls -ld /path /path/to/dir
-ls -l file
-~~~
-- 디렉터리 접근 불가(cd Permission denied)는 대부분 **x(실행/진입) 권한 문제**.
+- 현재 사용 중인 쉘 경로 출력
+- 예: `/bin/bash`
 
 ---
 
-## 06) TIL/LINUX/06_search_and_text_tools.md
+## 2. 프롬프트(PS1) 확인 및 변경
 
-# Search & Text Tools (grep/find + 텍스트 파이프라인)
-
-## 1) grep (파일 내용 검색)
+### 현재 프롬프트 확인
 ~~~bash
-grep "ERROR" app.log
-grep -n "ERROR" app.log
-grep -i "error" app.log
-grep -r "TODO" .                 # 재귀
-grep -E "err|fail" app.log        # 정규식 OR
+echo $PS1
 ~~~
 
-## 2) find (파일 자체 검색) — grep보다 더 자주 씀
-~~~bash
-find . -name "*.py"
-find . -type f -size +100M
-find . -type f -mtime -3          # 최근 3일 수정
+출력 예:
+~~~text
+\[\e]0;\u@\h: \w\a\]${debian_chroot:+($debian_chroot)}\u@\h:\w\$
 ~~~
 
-### find + grep 콤보(프로젝트에서 핵심)
+> 로컬에서는 길고, 원격 서버에서는 보통 짧게 설정되어 있음
+
+---
+
+### 프롬프트 백업
+
 ~~~bash
-find . -name "*.py" -print0 | xargs -0 grep -n "TODO"
+DEFAULT=$PS1
 ~~~
 
-## 3) 정렬/집계
+의미:
+> 현재 프롬프트 설정값을 `DEFAULT` 변수에 저장 (백업)
+
+---
+
+### 프롬프트 변경 실습
+
 ~~~bash
-wc -l file.txt
-sort file.txt
-sort file.txt | uniq
-sort file.txt | uniq -c
+PS1="\u $ "
 ~~~
 
-## 4) cut/awk/sed (응용 입문)
+결과:
+~~~text
+song $
+~~~
+
 ~~~bash
-cut -d: -f1 /etc/passwd
-awk -F: '{print $1, $7}' /etc/passwd
-sed 's/foo/bar/g' file.txt
-sed -n '1,10p' file.txt
+PS1="Hello $ "
+~~~
+
+~~~bash
+PS1="\u@\t: \w # "
+~~~
+
+결과 예:
+~~~text
+song@15:14:07: ~ #
 ~~~
 
 ---
 
-## 07) TIL/LINUX/07_archives_packages_and_download.md
+### 원래대로 복구
 
-# Packages / Archives / Download (실무 기본)
-
-## 1) apt 패키지 관리(Ubuntu)
 ~~~bash
-sudo apt update
-sudo apt install tree htop
-sudo apt remove tree
-apt list --installed | grep tree
+PS1=$DEFAULT
 ~~~
 
-## 2) 압축/해제 (tar 필수)
+> 이 변경은 **현재 터미널 세션에서만** 유지된다.
+
+---
+
+## 3. ANSI 컬러 출력
+
+### 잘못된 예
+
 ~~~bash
-tar -czf backup.tar.gz mydir/
-tar -xzf backup.tar.gz
+echo "/e[31mHello"
 ~~~
 
-## 3) zip
+→ 그냥 문자열로 출력됨
+
+---
+
+### 올바른 방법
+
 ~~~bash
-zip -r backup.zip mydir/
-unzip backup.zip
+echo -e "\e[31mHello"   # 빨강
+echo -e "\e[33mHello"   # 노랑
+echo -e "\e[32mHello"   # 초록
 ~~~
 
-## 4) 다운로드(curl/wget)
+문제:
+> 색을 초기화하지 않으면 **터미널 전체 색이 계속 바뀜**
+
+---
+
+### 반드시 초기화 코드 필요
+
 ~~~bash
-curl -I https://example.com
-curl -L -o file.zip https://example.com/file.zip
-wget -O file.zip https://example.com/file.zip
+echo -e "\e[33mHello\e[0m"
 ~~~
 
 ---
 
-## 08) TIL/LINUX/08_process_jobs_and_ports.md
+### 배경색
 
-# Process / Jobs / Ports (개발/서버 필수)
-
-## 1) 프로세스 확인
 ~~~bash
-ps aux
-top
-htop     # 없으면: sudo apt install htop
-~~~
-
-## 2) 프로세스 찾기
-~~~bash
-ps aux | grep python
-pgrep -a python
-~~~
-
-## 3) 종료(시그널)
-~~~bash
-kill <PID>          # SIGTERM(정상 종료 요청)
-kill -9 <PID>       # SIGKILL(최후 수단)
-pkill -f "uvicorn"  # 패턴 종료(주의)
-~~~
-
-## 4) 잡 제어(터미널 작업 체력)
-~~~bash
-sleep 1000 &
-jobs
-fg %1
-bg %1
-# Ctrl+Z: 일시정지
-disown %1           # 터미널 종료해도 유지
-~~~
-
-## 5) 포트/리스닝 확인(개발자 필수)
-~~~bash
-ss -lntp
-sudo lsof -i :8000
+echo -e "\e[44mHello\e[0m"
 ~~~
 
 ---
 
-## 09) TIL/LINUX/09_systemd_and_logs.md
+### 글자색 + 배경색 동시에
 
-# systemd / Logs (운영 기본)
-
-## 1) 서비스 상태/관리
 ~~~bash
-systemctl status <service>
-sudo systemctl start <service>
-sudo systemctl stop <service>
-sudo systemctl restart <service>
-sudo systemctl enable <service>      # 부팅 시 자동 시작
-sudo systemctl disable <service>
+echo -e "\e[31;46mHello\e[0m"
 ~~~
 
-## 2) 로그 보기(journalctl)
+> ⚠️ 구분자는 반드시 `;` (세미콜론)
+
+---
+
+### PuTTY 설정
+
+- 상단 우클릭 → Change Settings → Colours
+- **Allow terminal to specify ANSI colours** 체크되어 있어야 색 출력됨
+
+---
+
+## 4. 리다이렉션 (>, >>, 2>&1)
+
+### 덮어쓰기 / 이어쓰기
+
 ~~~bash
-journalctl -u <service> -n 200
-journalctl -u <service> -f            # 실시간
-journalctl -xe                         # 최근 에러 중심
+echo "hello" > hello.txt
+echo "hi" >> hello.txt
+cat hello.txt
 ~~~
 
-## 3) 커널/부팅 로그
-~~~bash
-dmesg | tail -n 100
+결과:
+~~~text
+hello
+hi
 ~~~
 
 ---
 
-## 10) TIL/LINUX/10_shell_script_next_level.md
+### /tmp 실습
 
-# Shell Script (입문 다음 단계: “안전하게 쓰는 법”)
-
-## 1) shebang + 실행권한
 ~~~bash
-#!/usr/bin/env bash
+ls /tmp
+ls /tmp/*
+~~~
+
+에러:
+~~~text
+Permission denied
+~~~
+
+---
+
+### 정상출력 + 에러 출력 같이 저장
+
+~~~bash
+ls /tmp/* > hello.txt 2>&1
+~~~
+
+의미:
+- `>` : stdout(1) → hello.txt
+- `2>&1` : stderr(2) → stdout(1)과 같은 곳으로
+
+> 즉, **정상 출력 + 에러 메시지 전부 파일에 저장**
+
+---
+
+## 5. PATH 환경변수
+
+### 현재 PATH 확인
+
+~~~bash
+echo $PATH
+~~~
+
+---
+
+### 현재 디렉터리도 실행 경로에 추가
+
+~~~bash
+PATH=$PATH:./
+echo $PATH
+~~~
+
+이후:
+
+~~~bash
+mycat readonly.txt
+./mycat readonly.txt
+~~~
+
+둘 다 실행됨.
+
+---
+
+### PATH 원래대로 복구
+
+~~~bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin
+~~~
+
+이후:
+
+~~~bash
+mycat readonly.txt
+~~~
+
+~~~text
+Command 'mycat' not found
+~~~
+
+---
+
+## 6. alias
+
+~~~bash
+alias
+alias ..="cd .."
+alias ...="cd ../.."
+~~~
+
+---
+
+### 영구 저장
+
+~~~bash
+nano ~/.bashrc
+touch ~/.bash_aliases
+alias
+echo 'alias ..="cd .."' > ~/.bash_aliases
+echo 'alias ...="cd ../.."' >> ~/.bash_aliases
+cat ~/.bash_aliases
+~~~
+
+---
+
+## 7. while read 실습 (/etc/passwd)
+
+### 여러 줄 버전
+
+~~~bash
+while IFS=: read -r F1 F2 F3 F4 F5 F6 F7
+do
+  echo "사용자 $F1는 $F7 쉘을 사용하고 $F6 홈디렉토리를 사용합니다."
+done
+~~~
+
+---
+
+### 한 줄 버전
+
+~~~bash
+while IFS=: read -r F1 F2 F3 F4 F5 F6 F7 ; do echo "사용자 $F1는 $F7 쉘을 사용하고 $F6 홈디렉토리를 사용합니다."; done < /etc/passwd
+~~~
+
+---
+
+## 8. 쉘 스크립트 기초
+
+### 스크립트 작성
+
+~~~bash
+vi test1.sh
+~~~
+
+내용:
+~~~bash
 echo "hello"
+ls -l
 ~~~
-~~~bash
-chmod u+x script.sh
-./script.sh
-~~~
-
-## 2) 안전 옵션(강추)
-~~~bash
-set -euo pipefail
-# -e: 에러 나면 종료
-# -u: 정의 안 된 변수 사용 시 에러
-# -o pipefail: 파이프 중간 실패도 잡기
-~~~
-
-## 3) 인자/변수/기본값
-~~~bash
-name="${1:-world}"
-echo "hello, $name"
-~~~
-
-## 4) 종료코드(엄청 중요)
-~~~bash
-command
-echo $?     # 직전 명령 exit code (0=성공)
-~~~
-
-## 5) 조건문/케이스
-~~~bash
-if [[ -f "file.txt" ]]; then
-  echo "exists"
-else
-  echo "missing"
-fi
-
-case "${1:-}" in
-  start) echo "start";;
-  stop)  echo "stop";;
-  *)     echo "usage: $0 {start|stop}"; exit 1;;
-esac
-~~~
-
-## 6) 루프(파일/라인 처리)
-~~~bash
-while IFS=: read -r user _ uid gid gecos home shell; do
-  echo "사용자 $user 는 $shell 을 쓰고 $home 을 홈으로 사용"
-done < /etc/passwd
-~~~
-
-## 7) 따옴표(사고 방지 포인트)
-- 변수는 웬만하면 `"${var}"`로 감싸기
-- 공백/특수문자 들어간 경로에서 깨짐 방지
 
 ---
 
-# ✅ “1~3 실습”과 연결되는 핵심 포인트(요약)
-- 협업 폴더 권한: `/work`에 `g+w`와 `g+s(setgid)`를 주면 그룹 협업이 편해짐. :contentReference[oaicite:2]{index=2}
-- setuid는 동작 원리 이해용으로 좋지만, 실제 운영에선 보안 리스크가 큼(실습 후 반드시 원복). :contentReference[oaicite:3]{index=3}
+### 실행 안 됨
+
+~~~bash
+test1.sh
+~~~
+
+~~~text
+command not found
+~~~
+
+---
+
+### bash로 실행
+
+~~~bash
+bash test1.sh
+~~~
+
+---
+
+### 실행권한 부여
+
+~~~bash
+chmod u+x test1.sh
+~~~
+
+---
+
+### 직접 실행
+
+~~~bash
+./test1.sh
+~~~
+
+---
+
+## 9. 핵심 요약
+
+- `PS1` = 프롬프트 모양
+- `DEFAULT=$PS1` = 프롬프트 백업
+- `\e[31;46m` = ANSI 컬러 (세미콜론 필수)
+- `>`, `>>`, `2>&1` = 출력 제어
+- `PATH` = 실행 파일 검색 경로
+- alias = 명령어 단축
+- 스크립트는:
+  - `bash script.sh` 또는
+  - `chmod +x` 후 `./script.sh`
+
+---
+
+## 이 파일의 목적
+
+> “쉘이 단순히 명령 치는 곳이 아니라,  
+> **환경 / 자동화 / 출력 제어 / 커스터마이징**의 중심이라는 것을 이해하는 것”
 
