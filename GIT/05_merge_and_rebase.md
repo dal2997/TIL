@@ -27,3 +27,22 @@ git rebase main
 - 이미 공유(push)한 커밋은 rebase로 재작성하지 말기
 - 개인 로컬 정리용으로만 rebase를 적극 사용
 
+## merge / rebase 기본 개념
+
+### merge
+- 히스토리를 그대로 유지
+- 협업 브랜치 병합에 안전
+
+~~~
+git switch main
+git merge abc
+~~~
+
+### rebase
+- 커밋 히스토리를 깔끔하게 정리
+- **아직 공유하지 않은 브랜치에서만 사용**
+
+~~~
+git switch abc
+git rebase main
+~~~
